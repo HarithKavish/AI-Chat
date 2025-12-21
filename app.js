@@ -68,6 +68,7 @@ function switchChat(chatId) {
 function openNewBlankChat() {
     currentChatId = null;
     renderChatUI();
+    renderSidebar();
 }
 
 function deleteChat(chatId) {
@@ -402,7 +403,7 @@ function renderChatUI() {
         messagesEl.innerHTML = `
             <div class="welcome">
                 <h2>Welcome to AI Chat</h2>
-                <p>Start a new conversation! Your chats will be saved locally${googleAccessToken ? ' and synced to Google Drive' : ''}.</p>
+                <p>Start a new conversation to begin chatting with AI Assistant!</p>
             </div>
         `;
         return;
@@ -433,131 +434,24 @@ function updateAuthStatus(user) {
     const syncStatusEl = document.getElementById('sync-status');
     if (!authStatusEl) return;
 
-    if (!googleAccessToken) {
+    const storedUser = getStoredGoogleUser();
+    if (!storedUser) {
         authStatusEl.textContent = 'Not signed in';
         if (syncStatusEl) syncStatusEl.style.display = 'none';
     } else {
-        const statusText = driveStatus === 'syncing' ? 'syncing...' : 
-                          driveStatus === 'online' ? 'synced' : 
-                          driveStatus === 'error' ? 'sync error' : 'offline';
-        authStatusEl.textContent = `Signed in • Drive ${statusText}`;
-        if (syncStatusEl && driveStatus === 'syncing') {
-            syncStatusEl.style.display = 'inline';
-        } else if (syncStatusEl) {
-            syncStatusEl.style.display = 'none';
-        }
-    }
-}
-
-// ===== Google OAuth =====
-function handleGoogleCredentialResponse(credentialResponse) {
-    console.log('Google OAuth credential response', credentialResponse);
-    const profile = extractProfileFromCredential(credentialResponse?.credential);
-    const user = {
-        name: profile?.name || 'Signed in',
-        picture: profile?.picture || '',
-        email: profile?.email || ''
-    };
-    storeGoogleUser(user);
-    
-    // Initialize Drive sync after sign in
-    initializeGoogleDriveAccess(user);
-    renderSignedInButton(user);
-    updateAuthStatus(user);
-}
-
-function renderSignedInButton(user) {
-    const googleButtonTarget = document.getElementById('googleSignInButton');
-    if (!googleButtonTarget) return;
-    googleButtonTarget.innerHTML = `
-        <button type="button" class="signed-in-button" aria-label="Signed in as ${user.name}">
-            <img src="${user.picture || 'https://www.gravatar.com/avatar/?d=mp'}" alt="${user.name} avatar"
-                class="signed-in-button__avatar" loading="lazy" />
-            <span class="signed-in-button__name">${user.name}</span>
-        </button>`;
-    const signInBtn = googleButtonTarget.querySelector('button');
-    signInBtn?.addEventListener('click', () => {
-        clearStoredGoogleUser();
-        googleAccessToken = null;
-        setGoogleAccessToken(null);
-        driveFolderId = null;
-        localStorage.removeItem(GOOGLE_DRIVE_FOLDER_ID_KEY);
-        driveStatus = 'idle';
-        chats = [];
-        currentChatId = null;
-        localStorage.removeItem(CHATS_STORAGE_KEY);
-        initGoogleSignInButton();
-        renderChatUI();
-        renderSidebar();
-        updateAuthStatus(null);
-    });
-}
-
-function initGoogleSignInButton() {
-    const googleButtonTarget = document.getElementById('googleSignInButton');
-    if (!googleButtonTarget) {
-        return;
-    }
-    const storedProfile = getStoredGoogleUser();
-    if (storedProfile) {
-        renderSignedInButton(storedProfile);
-        return;
-    }
-    if (!window.google?.accounts?.id) {
-        if (googleButtonRetries < 6) {
-            googleButtonRetries += 1;
-            window.setTimeout(initGoogleSignInButton, 250);
-        }
-        return;
-    }
-    googleButtonTarget.innerHTML = '';
-    google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: handleGoogleCredentialResponse
-    });
-    google.accounts.id.renderButton(
-        googleButtonTarget,
-        {
-            theme: 'outline',
-            size: 'medium',
-            type: 'standard',
-            shape: 'pill'
-        }
-    );
-    googleButtonTarget.dataset.initialized = 'true';
-}
-
-async function initializeGoogleDriveAccess(user) {
-    try {
-        // Try to get OAuth token for Drive API
-        if (!window.google?.accounts?.oauth2) return;
-
-        const tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: GOOGLE_CLIENT_ID,
-            scope: DRIVE_SCOPE,
-            callback: async (tokenResponse) => {
-                if (tokenResponse.access_token) {
-                    setGoogleAccessToken(tokenResponse.access_token);
-                    setDriveStatus('online');
-                    
-                    // Load chats from Drive
-                    const driveData = await loadChatsFromDrive();
-                    if (driveData && driveData.chats && driveData.chats.length > 0) {
-                        chats = driveData.chats;
-                        currentChatId = driveData.currentChatId;
-                        saveChatsToStorage();
-                        renderChatUI();
-                        renderSidebar();
-                    }
-                    updateAuthStatus(user);
-                }
+        if (!googleAccessToken) {
+            authStatusEl.textContent = `Signed in • Drive idle`;
+        } else {
+            const statusText = driveStatus === 'syncing' ? 'syncing...' : 
+                              driveStatus === 'online' ? 'synced' : 
+                              driveStatus === 'error' ? 'sync error' : 'idle';
+            authStatusEl.textContent = `Signed in • Drive ${statusText}`;
+            if (syncStatusEl && driveStatus === 'syncing') {
+                syncStatusEl.style.display = 'inline';
+            } else if (syncStatusEl) {
+                syncStatusEl.style.display = 'none';
             }
-        });
-
-        // Request token
-        tokenClient.requestAccessToken({ prompt: 'consent' });
-    } catch (err) {
-        console.debug('Drive access not available:', err);
+        }
     }
 }
 
@@ -693,7 +587,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (storedUser) {
         googleAccessToken = localStorage.getItem(GOOGLE_ACCESS_TOKEN_KEY);
         driveFolderId = localStorage.getItem(GOOGLE_DRIVE_FOLDER_ID_KEY);
-        renderSignedInButton(storedUser);
         if (googleAccessToken) {
             setDriveStatus('online');
             loadChatsFromDrive().then(driveData => {
@@ -722,6 +615,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadChatsFromStorage();
         renderChatUI();
         renderSidebar();
+        updateAuthStatus(null);
     }
 
     // Initialize model
@@ -757,6 +651,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Initialize Google Sign In button
-    initGoogleSignInButton();
+    // Listen for sign-in from shared header
+    window.addEventListener('storage', (event) => {
+        if (event.key === GOOGLE_USER_STORAGE_KEY) {
+            if (event.newValue) {
+                const user = JSON.parse(event.newValue);
+                initializeGoogleDriveAccess(user);
+                updateAuthStatus(user);
+            } else {
+                // User logged out
+                googleAccessToken = null;
+                setGoogleAccessToken(null);
+                driveFolderId = null;
+                localStorage.removeItem(GOOGLE_DRIVE_FOLDER_ID_KEY);
+                driveStatus = 'idle';
+                chats = [];
+                currentChatId = null;
+                localStorage.removeItem(CHATS_STORAGE_KEY);
+                renderChatUI();
+                renderSidebar();
+                updateAuthStatus(null);
+            }
+        }
+    });
 });
