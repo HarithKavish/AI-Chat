@@ -494,6 +494,73 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// ===== Google Sign In Button Setup =====
+const GOOGLE_CLIENT_ID = '59648450302-sqkk4pdujkt4hrm0uuhq95pq55b4jg2k.apps.googleusercontent.com';
+let googleButtonRetries = 0;
+
+function handleGoogleCredentialResponse(credentialResponse) {
+    console.log('Google OAuth credential response', credentialResponse);
+    const profile = extractProfileFromCredential(credentialResponse?.credential);
+    const user = {
+        name: profile?.name || 'Signed in',
+        picture: profile?.picture || '',
+        email: profile?.email || ''
+    };
+    storeGoogleUser(user);
+    updateAuthStatus(user);
+    initializeGoogleDriveAccess();
+}
+
+function renderSignedInButton(user) {
+    const googleButtonTarget = document.getElementById('googleSignInButton');
+    if (!googleButtonTarget) return;
+    googleButtonTarget.innerHTML = `
+        <button type="button" class="signed-in-button" aria-label="Signed in as ${user.name}">
+            <img src="${user.picture || 'https://www.gravatar.com/avatar/?d=mp'}" alt="${user.name} avatar"
+                class="signed-in-button__avatar" loading="lazy" />
+            <span class="signed-in-button__name">${user.name}</span>
+        </button>`;
+    const signInBtn = googleButtonTarget.querySelector('button');
+    signInBtn?.addEventListener('click', () => {
+        clearStoredGoogleUser();
+        initGoogleSignInButton();
+    });
+}
+
+function initGoogleSignInButton() {
+    const googleButtonTarget = document.getElementById('googleSignInButton');
+    if (!googleButtonTarget) {
+        return;
+    }
+    const storedProfile = getStoredGoogleUser();
+    if (storedProfile) {
+        renderSignedInButton(storedProfile);
+        return;
+    }
+    if (!window.google?.accounts?.id) {
+        if (googleButtonRetries < 6) {
+            googleButtonRetries += 1;
+            window.setTimeout(initGoogleSignInButton, 250);
+        }
+        return;
+    }
+    googleButtonTarget.innerHTML = '';
+    google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleCredentialResponse
+    });
+    google.accounts.id.renderButton(
+        googleButtonTarget,
+        {
+            theme: 'outline',
+            size: 'medium',
+            type: 'standard',
+            shape: 'pill'
+        }
+    );
+    googleButtonTarget.dataset.initialized = 'true';
+}
+
 // ===== Event Listeners =====
 document.addEventListener('DOMContentLoaded', () => {
     // Load chats from storage
@@ -537,6 +604,9 @@ document.addEventListener('DOMContentLoaded', () => {
             sendMessage(text);
         }
     });
+
+    // Initialize Google Sign In button
+    initGoogleSignInButton();
 
     // Handle Google Sign In from header
     window.handleGoogleSignIn = function (credential) {

@@ -35,8 +35,13 @@
             <!-- Main Chat Area -->
             <div class="chat-container">
                 <div class="chat-header">
-                    <h1>AI Assistant</h1>
-                    <p class="subtitle">Powered by DistilGPT2</p>
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <div>
+                            <h1>AI Assistant</h1>
+                            <p class="subtitle">Powered by DistilGPT2</p>
+                        </div>
+                        <div id="googleSignInButton"></div>
+                    </div>
                     <div class="status" id="model-status">Loading model...</div>
                 </div>
                 <div id="messages" class="messages">
