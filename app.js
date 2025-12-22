@@ -507,9 +507,9 @@ function updateAuthStatus(user) {
         if (!googleAccessToken) {
             authStatusEl.textContent = `Signed in • Drive idle`;
         } else {
-            const statusText = driveStatus === 'syncing' ? 'syncing...' : 
-                              driveStatus === 'online' ? 'synced' : 
-                              driveStatus === 'error' ? 'sync error' : 'idle';
+            const statusText = driveStatus === 'syncing' ? 'syncing...' :
+                driveStatus === 'online' ? 'synced' :
+                    driveStatus === 'error' ? 'sync error' : 'idle';
             authStatusEl.textContent = `Signed in • Drive ${statusText}`;
             if (syncStatusEl && driveStatus === 'syncing') {
                 syncStatusEl.style.display = 'inline';
@@ -525,6 +525,7 @@ async function initializeGoogleDriveAccess(user) {
     try {
         if (!window.google?.accounts?.oauth2) {
             console.debug('Google OAuth2 not available');
+            setDriveStatus('idle');
             return;
         }
 
@@ -534,17 +535,30 @@ async function initializeGoogleDriveAccess(user) {
             callback: async (tokenResponse) => {
                 if (tokenResponse.access_token) {
                     setGoogleAccessToken(tokenResponse.access_token);
-                    setDriveStatus('online');
+                    setDriveStatus('syncing');
                     localStorage.setItem(GOOGLE_ACCESS_TOKEN_KEY, tokenResponse.access_token);
-                    
-                    // Load chats from Drive
-                    const driveData = await loadChatsFromDrive();
-                    if (driveData && driveData.chats && driveData.chats.length > 0) {
-                        chats = driveData.chats;
-                        currentChatId = driveData.currentChatId;
-                        saveChatsToStorage();
+
+                    try {
+                        // Load chats from Drive
+                        const driveData = await loadChatsFromDrive();
+                        if (driveData && driveData.chats && driveData.chats.length > 0) {
+                            console.log('Loaded chats from Drive:', driveData.chats.length);
+                            chats = driveData.chats;
+                            currentChatId = driveData.currentChatId;
+                            saveChatsToStorage();
+                            renderChatUI();
+                            renderSidebar();
+                            setDriveStatus('online');
+                        } else {
+                            console.log('No chats found on Drive, keeping local data');
+                            setDriveStatus('online');
+                        }
+                    } catch (driveErr) {
+                        console.warn('Failed to load from Drive, using local storage:', driveErr);
+                        loadChatsFromStorage();
                         renderChatUI();
                         renderSidebar();
+                        setDriveStatus('online');
                     }
                     updateAuthStatus(user);
                 }
@@ -567,14 +581,16 @@ async function initializeModel() {
     try {
         statusEl.textContent = 'Downloading model...';
         const { pipeline: p } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1');
-        
-        pipeline = await p('text-generation', 'Xenova/distilgpt2', { progress_callback: (status) => {
-            if (status.status === 'downloading') {
-                const percent = Math.round((status.progress || 0) * 100);
-                statusEl.textContent = `Loading... ${percent}%`;
+
+        pipeline = await p('text-generation', 'Xenova/distilgpt2', {
+            progress_callback: (status) => {
+                if (status.status === 'downloading') {
+                    const percent = Math.round((status.progress || 0) * 100);
+                    statusEl.textContent = `Loading... ${percent}%`;
+                }
             }
-        }});
-        
+        });
+
         modelReady = true;
         statusEl.textContent = 'Ready';
         setTimeout(() => statusEl.style.display = 'none', 2000);
@@ -605,7 +621,7 @@ async function sendMessage(text) {
 
     // Add user message
     chat.messages.push({ role: 'user', content: text });
-    
+
     // Render user message
     const userBubble = document.createElement('div');
     userBubble.className = 'message user';
@@ -641,7 +657,7 @@ async function sendMessage(text) {
         });
 
         let aiResponse = results[0]?.generated_text || 'Sorry, I could not generate a response.';
-        
+
         // Extract only the new generated text (remove prompt)
         if (aiResponse.includes('Assistant:')) {
             aiResponse = aiResponse.split('Assistant:').pop().trim();
@@ -766,18 +782,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 initializeGoogleDriveAccess(user);
                 updateAuthStatus(user);
             } else {
-                // User logged out
+                // User logged out - clear ALL data
                 googleAccessToken = null;
                 setGoogleAccessToken(null);
                 driveFolderId = null;
-                localStorage.removeItem(GOOGLE_DRIVE_FOLDER_ID_KEY);
                 driveStatus = 'idle';
                 chats = [];
                 currentChatId = null;
+                
+                // Clear ALL localStorage keys
                 localStorage.removeItem(CHATS_STORAGE_KEY);
+                localStorage.removeItem(GOOGLE_ACCESS_TOKEN_KEY);
+                localStorage.removeItem(GOOGLE_DRIVE_FOLDER_ID_KEY);
+                
+                // Reset UI completely
+                document.getElementById('messages').innerHTML = '';
+                document.getElementById('chat-list').innerHTML = '';
                 renderChatUI();
                 renderSidebar();
                 updateAuthStatus(null);
+                
+                console.log('User logged out - all data cleared');
             }
         }
     });
