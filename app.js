@@ -783,27 +783,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateAuthStatus(user);
             } else {
                 // User logged out - clear ALL data
-                googleAccessToken = null;
-                setGoogleAccessToken(null);
-                driveFolderId = null;
-                driveStatus = 'idle';
-                chats = [];
-                currentChatId = null;
-                
-                // Clear ALL localStorage keys
-                localStorage.removeItem(CHATS_STORAGE_KEY);
-                localStorage.removeItem(GOOGLE_ACCESS_TOKEN_KEY);
-                localStorage.removeItem(GOOGLE_DRIVE_FOLDER_ID_KEY);
-                
-                // Reset UI completely
-                document.getElementById('messages').innerHTML = '';
-                document.getElementById('chat-list').innerHTML = '';
-                renderChatUI();
-                renderSidebar();
-                updateAuthStatus(null);
-                
-                console.log('User logged out - all data cleared');
+                handleLogout();
             }
         }
     });
+
+    // Also check logout status periodically (fallback for same-tab logout)
+    setInterval(() => {
+        const isStillLoggedIn = getStoredGoogleUser() !== null;
+        if (!isStillLoggedIn && chats.length > 0) {
+            console.log('Detected logout via polling');
+            handleLogout();
+        }
+    }, 1000); // Check every second
 });
+
+function handleLogout() {
+    googleAccessToken = null;
+    setGoogleAccessToken(null);
+    driveFolderId = null;
+    driveStatus = 'idle';
+    chats = [];
+    currentChatId = null;
+
+    // Clear ALL localStorage keys
+    localStorage.removeItem(CHATS_STORAGE_KEY);
+    localStorage.removeItem(GOOGLE_ACCESS_TOKEN_KEY);
+    localStorage.removeItem(GOOGLE_DRIVE_FOLDER_ID_KEY);
+
+    // Reset UI completely
+    document.getElementById('messages').innerHTML = '';
+    document.getElementById('chat-list').innerHTML = '';
+    renderChatUI();
+    renderSidebar();
+    updateAuthStatus(null);
+
+    console.log('User logged out - all data cleared');
+}
